@@ -75,7 +75,15 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 
 mcp = FastMCP(
     "FreeCADMCP",
-    instructions="FreeCAD integration through the Model Context Protocol",
+    instructions=(
+        "Control local FreeCAD to create CAD models and technical drawings. "
+        "Start with get_rpc_status and list_documents; inspect existing objects before edits. "
+        "Lengths are millimetres unless specified. Use execute_code for Sketcher, PartDesign, "
+        "and TechDraw workflows; recompute and validate shapes before saving. "
+        "Save FCStd and requested SVG/PDF/DXF/STEP exports to the user's output directory. "
+        "Use get_view to inspect results. Keep RPC calls sequential; use headless execution "
+        "for expensive modelling and reload_document to view saved results."
+    ),
     lifespan=server_lifespan,
 )
 

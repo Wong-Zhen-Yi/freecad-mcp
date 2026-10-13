@@ -49,7 +49,8 @@ def parse_command(value: str | None) -> list[str] | None:
 
 def _script_dir() -> Path:
     # Flatpak sandboxes usually see $HOME but not /tmp, so keep scripts under HOME.
-    d = Path.home() / ".cache" / "freecad-mcp" / "headless"
+    override = os.environ.get("FREECAD_MCP_WORK_DIR")
+    d = Path(override) if override else Path.home() / ".cache" / "freecad-mcp" / "headless"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -66,7 +67,7 @@ def _clean(output: str | bytes | None) -> str:
 
 
 def run_headless(code: str, timeout: float, command: list[str] | None) -> dict[str, Any]:
-    """Execute ``code`` with ``command -c "exec(open(script).read())"``.
+    """Execute code with FreeCADCmd's script-file interface or Python's -c.
 
     Returns ``success``, ``returncode``, ``output`` (stdout+stderr, noise
     filtered), and flags ``crashed`` (killed by a signal) / ``timed_out``.
@@ -79,16 +80,38 @@ def run_headless(code: str, timeout: float, command: list[str] | None) -> dict[s
             "success": False,
             "error": "freecadcmd not found: install FreeCAD, or pass --freecadcmd to freecad-mcp",
         }
+    is_freecadcmd = any(
+        Path(part).name.lower() in {"freecadcmd", "freecadcmd.exe", "freecad.cmd"}
+        or part == "--command=freecadcmd"
+        for part in command
+    )
     with tempfile.NamedTemporaryFile(
         "w", suffix=".py", dir=_script_dir(), delete=False, encoding="utf-8"
     ) as f:
-        f.write(code)
+        if is_freecadcmd:
+            # FreeCAD's -c means console mode, not Python's command string.
+            # It also logs script exceptions without a failing exit status.
+            f.write(
+                "import os, sys, traceback\n"
+                "try:\n"
+                f"    exec(compile({code!r}, '<freecad-mcp>', 'exec'))\n"
+                "except BaseException:\n"
+                "    traceback.print_exc()\n"
+                "    sys.stdout.flush()\n"
+                "    sys.stderr.flush()\n"
+                "    os._exit(1)\n"
+            )
+        else:
+            f.write(code)
         script = f.name
-    argv = command + ["-c", f"exec(open({script!r}, encoding='utf-8').read())"]
+    argv = command + ([script] if is_freecadcmd else [
+        "-c", f"exec(open({script!r}, encoding='utf-8').read())"
+    ])
     try:
         proc = subprocess.run(
             argv, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
     except subprocess.TimeoutExpired as e:
         out = "\n".join(part for part in (_clean(e.stdout), _clean(e.stderr)) if part)
