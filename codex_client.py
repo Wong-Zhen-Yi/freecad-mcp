@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -17,7 +18,7 @@ async def invoke(args):
         args=[str(ROOT / "launch_codex.py"), "--host", "127.0.0.1"],
     )
     async with stdio_client(params) as streams:
-        async with ClientSession(streams[0], streams[1], read_timeout_seconds=180) as session:
+        async with ClientSession(streams[0], streams[1], read_timeout_seconds=timedelta(seconds=180)) as session:
             init = await session.initialize()
             if args.tool == "list":
                 result = await session.list_tools()
